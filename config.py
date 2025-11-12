@@ -11,3 +11,5 @@ EMBEDDING_MODEL = "nomic-embed-text"
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 MIN_CHUNK_SIZE = 100
+
+DB_PATH = "./data/vector_db"
