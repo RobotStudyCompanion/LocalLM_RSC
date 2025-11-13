@@ -18,6 +18,11 @@ EMBEDDING_MODEL = "nomic-embed-text"
 # Embedding generation settings
 EMBEDDING_BATCH_SIZE = 10
 
+# Tier Configuration
+TIER_1_NAME = "cache"
+TIER_2_NAME = "1B"
+TIER_3_NAME = "4B"
+
 # Chunking parameters
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
@@ -42,6 +47,10 @@ MEMORY_LIMIT_MB = 6000  # Leave 2GB for system
 # ===== LOGGING =====
 LOG_LEVEL = "INFO"
 VERBOSE = True
+
+# Context Settings
+MAX_CONTEXT_ITEMS = 3  # Number of context chunks for LLM
+
 
 print(f"📁 Project root: {PROJECT_ROOT}")
 print(f"📄 Documents directory: {DOCUMENTS_DIR}")

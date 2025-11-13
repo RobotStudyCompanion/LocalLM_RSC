@@ -57,9 +57,8 @@ from config import *
 from modules.pdf_processor import pdf_converter, print_pdf_summary
 from modules.database import VectorDatabase
 from modules.embeddings import EmbeddingGenerator
-###############################################################################################
-# function that will handle accuracy evaluation
-###############################################################################################
+from modules.accuracy_evaluator import AccuracyEvaluator
+
 ###############################################################################################
 # function that will handle the three tier architecture
 ###############################################################################################
@@ -72,17 +71,7 @@ from modules.embeddings import EmbeddingGenerator
 
 
 def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGenerator) -> bool:
-    """
-    Process a PDF and store it in the database
-    
-    Args:
-        pdf_path: Path to PDF file
-        db: VectorDatabase instance
-        embedding_gen: EmbeddingGenerator instance
-        
-    Returns:
-        bool: Success status
-    """
+    """Process a PDF and store it in the database"""
     result = pdf_converter(
         file_path=pdf_path,
         chunk_size=CHUNK_SIZE,
@@ -109,97 +98,153 @@ def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGener
     
     valid_chunks, valid_embeddings, valid_metadata = zip(*valid_data)
     
-    return db.store_document_chunks(
-        chunks=list(valid_chunks),
-        embeddings=list(valid_embeddings),
-        metadata=list(valid_metadata),
-        document_name=os.path.basename(pdf_path)
-    )
+    try:
+        return db.store_document_chunks(
+            chunks=list(valid_chunks),
+            embeddings=list(valid_embeddings),
+            metadata=list(valid_metadata),
+            document_name=os.path.basename(pdf_path)
+        )
+    except Exception as e:
+        if "expecting embedding with dimension" in str(e):
+            print(f"  ⚠ Dimension mismatch detected")
+            print(f"  Clearing documents collection...")
+            db.clear_collection("documents")
+            print(f"  Retrying...")
+            
+            return db.store_document_chunks(
+                chunks=list(valid_chunks),
+                embeddings=list(valid_embeddings),
+                metadata=list(valid_metadata),
+                document_name=os.path.basename(pdf_path)
+            )
+        else:
+            print(f"  Error: {str(e)}")
+            return False
 
 
-def query_documents(query: str, db: VectorDatabase, embedding_gen: EmbeddingGenerator, n_results: int = 3) -> Dict:
+def handle_query(
+    query: str,
+    evaluator: AccuracyEvaluator,
+    db: VectorDatabase
+) -> Dict:
     """
-    Query the database with a question
+    Handle a query with tier evaluation
     
     Args:
-        query: Question text
+        query: User query
+        evaluator: AccuracyEvaluator instance
         db: VectorDatabase instance
-        embedding_gen: EmbeddingGenerator instance
-        n_results: Number of results to return
         
     Returns:
-        Dict with search results
+        Dict with answer and metadata
     """
-    query_embedding = embedding_gen.generate_embedding(query)
+    # Evaluate query and determine tier
+    evaluation = evaluator.evaluate_query(query)
     
-    if not query_embedding:
-        return {}
+    tier = evaluation["tier"]
+    tier_name = evaluation["tier_name"]
+    max_similarity = evaluation["max_similarity"]
     
-    return db.semantic_search(
-        query_embedding=query_embedding,
-        collection_name="documents",
-        n_results=n_results
-    )
+    # Get context for the query
+    context = evaluator.get_context_for_tier(evaluation, max_context_items=MAX_CONTEXT_ITEMS)
+    
+    # For now, we'll return a placeholder answer
+    # This will be replaced with actual LLM calls in llm_handler.py
+    if tier == 1:
+        # Tier 1: Use cached answer
+        cached_item = evaluation["similar_items"][0] if evaluation["similar_items"] else None
+        if cached_item and cached_item["source"] == "cache":
+            answer = cached_item["metadata"].get("answer", "No cached answer found")
+        else:
+            answer = "[Cache tier selected but no exact match found]"
+    
+    elif tier == 2:
+        # Tier 2: Small model with context
+        answer = f"[Would use small model ({SMALL_MODEL}) with {len(context)} context items]"
+    
+    else:
+        # Tier 3: Large model with context
+        answer = f"[Would use large model ({LARGE_MODEL}) with {len(context)} context items]"
+    
+    return {
+        "answer": answer,
+        "tier": tier,
+        "tier_name": tier_name,
+        "similarity": max_similarity,
+        "context_items": len(context),
+        "reasoning": evaluation["reasoning"]
+    }
 
 
 def main():
     """Main execution flow"""
     print("\n" + "="*70)
-    print("THREE-TIER LLM SYSTEM - PDF Processing & Storage")
+    print("THREE-TIER LLM SYSTEM")
     print("="*70 + "\n")
     
-    # Initialize embedding generator
-    print("Initializing embedding generator...")
+    # Initialize
+    print("Initializing components...")
     embedding_gen = EmbeddingGenerator(model_name=EMBEDDING_MODEL, batch_size=EMBEDDING_BATCH_SIZE)
-    print(f"✓ Using model: {EMBEDDING_MODEL}\n")
     
-    # Initialize database
-    print("Initializing database...")
+    test_emb = embedding_gen.generate_embedding("test")
+    if not test_emb:
+        print("✗ Failed to generate test embedding")
+        print("  Make sure Ollama is running: ollama serve")
+        print(f"  Make sure model is installed: ollama pull {EMBEDDING_MODEL}")
+        return
+    
+    print(f"✓ Embedding model: {EMBEDDING_MODEL} ({len(test_emb)}D)")
+    
     db = VectorDatabase(db_path=VECTOR_DB_PATH)
-    
     if not db.initialize_db():
         print("✗ Failed to initialize database")
         return
     
-    print("✓ Database initialized\n")
+    print("✓ Database initialized")
     
-    # Find PDFs
+    evaluator = AccuracyEvaluator(db, embedding_gen)
+    print(f"✓ Accuracy evaluator initialized")
+    print(f"  Tier 1 threshold: >= {HIGH_SIMILARITY_THRESHOLD}")
+    print(f"  Tier 2 threshold: >= {MEDIUM_SIMILARITY_THRESHOLD}")
+    print(f"  Tier 3 threshold: < {MEDIUM_SIMILARITY_THRESHOLD}\n")
+    
+    # Find and process PDFs
     print(f"Searching for PDFs in: {DOCUMENTS_DIR}")
     pdf_files = list(Path(DOCUMENTS_DIR).glob("*.pdf"))
     
     if not pdf_files:
         print("✗ No PDF files found")
         print(f"  Add PDFs to: {DOCUMENTS_DIR}")
-        return
-    
-    print(f"✓ Found {len(pdf_files)} PDF(s)\n")
-    
-    # Process PDFs
-    print("="*70)
-    print("PROCESSING PDFs")
-    print("="*70 + "\n")
-    
-    processed = 0
-    for pdf_file in pdf_files:
-        print(f"Processing: {pdf_file.name}")
-        if process_pdf(str(pdf_file), db, embedding_gen):
-            print(f"✓ Success\n")
-            processed += 1
-        else:
-            print(f"✗ Failed\n")
-    
-    print(f"Processed {processed}/{len(pdf_files)} PDFs\n")
-    
-    if processed == 0:
-        return
+    else:
+        print(f"✓ Found {len(pdf_files)} PDF(s)\n")
+        
+        print("="*70)
+        print("PROCESSING PDFs")
+        print("="*70 + "\n")
+        
+        processed = 0
+        for pdf_file in pdf_files:
+            print(f"Processing: {pdf_file.name}")
+            if process_pdf(str(pdf_file), db, embedding_gen):
+                print(f"✓ Success\n")
+                processed += 1
+            else:
+                print(f"✗ Failed\n")
+        
+        print(f"Processed {processed}/{len(pdf_files)} PDFs\n")
     
 
     
     # Interactive query loop
     print("="*70)
-    print("INTERACTIVE QUERY MODE")
+    print("INTERACTIVE QUERY MODE (with Tier Evaluation)")
     print("="*70)
-    print("Commands: 'quit' to exit, 'stats' for database info\n")
+    print("Commands:")
+    print("  'quit' - Exit")
+    print("  'stats' - Database statistics")
+    print("  'tier-stats' - Tier usage statistics")
+    print()
     
     while True:
         try:
@@ -214,26 +259,40 @@ def main():
                     print(f"  {collection}: {info['count']} items")
                 continue
             
+            if user_input.lower() == 'tier-stats':
+                tier_stats = evaluator.get_tier_statistics()
+                print(f"\nTier Usage Statistics:")
+                print(f"  Total queries: {tier_stats['total_queries']}")
+                print(f"  Tier 1 (cache): {tier_stats['tier_1_cache']}")
+                print(f"  Tier 2 (small): {tier_stats['tier_2_small']}")
+                print(f"  Tier 3 (large): {tier_stats['tier_3_large']}")
+                print(f"  Cache hit rate: {tier_stats['cache_hit_rate']:.1f}%")
+                print(f"  Avg similarity: {tier_stats['avg_similarity']:.3f}\n")
+                continue
+            
             if not user_input:
                 continue
             
-            results = query_documents(user_input, db, embedding_gen)
+            # Handle query with tier evaluation
+            result = handle_query(user_input, evaluator, db)
             
-            if results and 'documents' in results and results['documents']:
-                print(f"\nFound {len(results['documents'][0])} results:\n")
-                
-                for i, doc in enumerate(results['documents'][0]):
-                    distance = results['distances'][0][i]
-                    metadata = results['metadatas'][0][i]
-                    similarity = 1 - distance
-                    
-                    page = metadata.get('page', '?')
-                    preview = doc[:250] + "..." if len(doc) > 250 else doc
-                    
-                    print(f"[{i+1}] Similarity: {similarity:.3f} | Page: {page}")
-                    print(f"    {preview}\n")
-            else:
-                print("No results found\n")
+            # Display results
+            print(f"\n{'='*70}")
+            print(f"Tier: {result['tier']} ({result['tier_name']})")
+            print(f"Similarity: {result['similarity']:.3f}")
+            print(f"Context items: {result['context_items']}")
+            print(f"Reasoning: {result['reasoning']}")
+            print(f"{'='*70}")
+            print(f"\nAnswer: {result['answer']}\n")
+            
+            # Store in user history
+            db.store_user_interaction(
+                question=user_input,
+                answer=result['answer'],
+                question_embedding=embedding_gen.generate_embedding(user_input),
+                model_used=result['tier_name'],
+                similarity_score=result['similarity']
+            )
             
         except KeyboardInterrupt:
             print("\n")
