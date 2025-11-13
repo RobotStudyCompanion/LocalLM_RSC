@@ -58,15 +58,10 @@ from modules.pdf_processor import pdf_converter, print_pdf_summary
 from modules.database import VectorDatabase
 from modules.embeddings import EmbeddingGenerator
 from modules.accuracy_evaluator import AccuracyEvaluator
+from modules.llm_handler import LLMHandler
 
 ###############################################################################################
-# function that will handle the three tier architecture
-###############################################################################################
-###############################################################################################
 # function that will handle the generation of questions from the document using the big model
-###############################################################################################
-###############################################################################################
-# function that will handle the second tier LLM (1B model) that will need to answers based on the similar questions and the similar found in the documents
 ###############################################################################################
 
 
@@ -107,8 +102,7 @@ def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGener
         )
     except Exception as e:
         if "expecting embedding with dimension" in str(e):
-            print(f"  ⚠ Dimension mismatch detected")
-            print(f"  Clearing documents collection...")
+            print(f"  ⚠ Dimension mismatch - clearing documents collection...")
             db.clear_collection("documents")
             print(f"  Retrying...")
             
@@ -123,98 +117,77 @@ def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGener
             return False
 
 
-def handle_query(
-    query: str,
-    evaluator: AccuracyEvaluator,
-    db: VectorDatabase
-) -> Dict:
-    """
-    Handle a query with tier evaluation
-    
-    Args:
-        query: User query
-        evaluator: AccuracyEvaluator instance
-        db: VectorDatabase instance
-        
-    Returns:
-        Dict with answer and metadata
-    """
-    # Evaluate query and determine tier
-    evaluation = evaluator.evaluate_query(query)
-    
-    tier = evaluation["tier"]
-    tier_name = evaluation["tier_name"]
-    max_similarity = evaluation["max_similarity"]
-    
-    # Get context for the query
-    context = evaluator.get_context_for_tier(evaluation, max_context_items=MAX_CONTEXT_ITEMS)
-    
-    # For now, we'll return a placeholder answer
-    # This will be replaced with actual LLM calls in llm_handler.py
-    if tier == 1:
-        # Tier 1: Use cached answer
-        cached_item = evaluation["similar_items"][0] if evaluation["similar_items"] else None
-        if cached_item and cached_item["source"] == "cache":
-            answer = cached_item["metadata"].get("answer", "No cached answer found")
-        else:
-            answer = "[Cache tier selected but no exact match found]"
-    
-    elif tier == 2:
-        # Tier 2: Small model with context
-        answer = f"[Would use small model ({SMALL_MODEL}) with {len(context)} context items]"
-    
-    else:
-        # Tier 3: Large model with context
-        answer = f"[Would use large model ({LARGE_MODEL}) with {len(context)} context items]"
-    
-    return {
-        "answer": answer,
-        "tier": tier,
-        "tier_name": tier_name,
-        "similarity": max_similarity,
-        "context_items": len(context),
-        "reasoning": evaluation["reasoning"]
-    }
-
-
 def main():
     """Main execution flow"""
     print("\n" + "="*70)
     print("THREE-TIER LLM SYSTEM")
     print("="*70 + "\n")
     
-    # Initialize
+    # Initialize components
     print("Initializing components...")
-    embedding_gen = EmbeddingGenerator(model_name=EMBEDDING_MODEL, batch_size=EMBEDDING_BATCH_SIZE)
     
+    # Embedding generator
+    embedding_gen = EmbeddingGenerator(model_name=EMBEDDING_MODEL, batch_size=EMBEDDING_BATCH_SIZE)
     test_emb = embedding_gen.generate_embedding("test")
     if not test_emb:
         print("✗ Failed to generate test embedding")
         print("  Make sure Ollama is running: ollama serve")
         print(f"  Make sure model is installed: ollama pull {EMBEDDING_MODEL}")
         return
-    
     print(f"✓ Embedding model: {EMBEDDING_MODEL} ({len(test_emb)}D)")
     
+    # Database
     db = VectorDatabase(db_path=VECTOR_DB_PATH)
     if not db.initialize_db():
         print("✗ Failed to initialize database")
         return
-    
     print("✓ Database initialized")
     
+    # Evaluator
     evaluator = AccuracyEvaluator(db, embedding_gen)
     print(f"✓ Accuracy evaluator initialized")
-    print(f"  Tier 1 threshold: >= {HIGH_SIMILARITY_THRESHOLD}")
-    print(f"  Tier 2 threshold: >= {MEDIUM_SIMILARITY_THRESHOLD}")
-    print(f"  Tier 3 threshold: < {MEDIUM_SIMILARITY_THRESHOLD}\n")
+    
+    # LLM Handler
+    llm_handler = LLMHandler(db, embedding_gen, evaluator)
+    print("✓ LLM handler initialized")
+    
+    # Verify models
+    print("\nVerifying LLM models...")
+    model_status = llm_handler.verify_models()
+    
+    if not model_status.get("all_available", False):
+        print("⚠ Some models are not available:")
+        if not model_status["small_model"]["available"]:
+            print(f"  ✗ Small model: {SMALL_MODEL}")
+            print(f"    Install with: ollama pull {SMALL_MODEL}")
+        else:
+            print(f"  ✓ Small model: {SMALL_MODEL}")
+        
+        if not model_status["large_model"]["available"]:
+            print(f"  ✗ Large model: {LARGE_MODEL}")
+            print(f"    Install with: ollama pull {LARGE_MODEL}")
+        else:
+            print(f"  ✓ Large model: {LARGE_MODEL}")
+        
+        print("\nYou can continue, but some tiers may not work properly.")
+        user_choice = input("Continue anyway? (y/n): ").strip().lower()
+        if user_choice != 'y':
+            return
+    else:
+        print(f"✓ Small model: {SMALL_MODEL}")
+        print(f"✓ Large model: {LARGE_MODEL}")
+    
+    print(f"\nTier thresholds:")
+    print(f"  Tier 1 (cache): >= {HIGH_SIMILARITY_THRESHOLD}")
+    print(f"  Tier 2 (small): >= {MEDIUM_SIMILARITY_THRESHOLD}")
+    print(f"  Tier 3 (large): < {MEDIUM_SIMILARITY_THRESHOLD}\n")
     
     # Find and process PDFs
     print(f"Searching for PDFs in: {DOCUMENTS_DIR}")
     pdf_files = list(Path(DOCUMENTS_DIR).glob("*.pdf"))
     
     if not pdf_files:
-        print("✗ No PDF files found")
+        print("⚠ No PDF files found")
         print(f"  Add PDFs to: {DOCUMENTS_DIR}")
     else:
         print(f"✓ Found {len(pdf_files)} PDF(s)\n")
@@ -235,15 +208,15 @@ def main():
         print(f"Processed {processed}/{len(pdf_files)} PDFs\n")
     
 
-    
     # Interactive query loop
     print("="*70)
-    print("INTERACTIVE QUERY MODE (with Tier Evaluation)")
+    print("INTERACTIVE QUERY MODE - Three-Tier System")
     print("="*70)
     print("Commands:")
     print("  'quit' - Exit")
     print("  'stats' - Database statistics")
     print("  'tier-stats' - Tier usage statistics")
+    print("  'help' - Show this help message")
     print()
     
     while True:
@@ -253,10 +226,21 @@ def main():
             if user_input.lower() in ['quit', 'exit', 'q']:
                 break
             
+            if user_input.lower() == 'help':
+                print("\nCommands:")
+                print("  'quit' - Exit the program")
+                print("  'stats' - Show database statistics")
+                print("  'tier-stats' - Show tier usage statistics")
+                print("  'help' - Show this help message")
+                print()
+                continue
+            
             if user_input.lower() == 'stats':
                 stats = db.get_collection_stats()
+                print()
                 for collection, info in stats.items():
                     print(f"  {collection}: {info['count']} items")
+                print()
                 continue
             
             if user_input.lower() == 'tier-stats':
@@ -266,33 +250,27 @@ def main():
                 print(f"  Tier 1 (cache): {tier_stats['tier_1_cache']}")
                 print(f"  Tier 2 (small): {tier_stats['tier_2_small']}")
                 print(f"  Tier 3 (large): {tier_stats['tier_3_large']}")
-                print(f"  Cache hit rate: {tier_stats['cache_hit_rate']:.1f}%")
-                print(f"  Avg similarity: {tier_stats['avg_similarity']:.3f}\n")
+                if tier_stats['total_queries'] > 0:
+                    print(f"  Cache hit rate: {tier_stats['cache_hit_rate']:.1f}%")
+                    print(f"  Avg similarity: {tier_stats['avg_similarity']:.3f}")
+                print()
                 continue
             
             if not user_input:
                 continue
             
-            # Handle query with tier evaluation
-            result = handle_query(user_input, evaluator, db)
+            # Handle query with LLM
+            print()
+            result = llm_handler.answer_query(user_input)
             
             # Display results
-            print(f"\n{'='*70}")
+            print(f"{'='*70}")
             print(f"Tier: {result['tier']} ({result['tier_name']})")
             print(f"Similarity: {result['similarity']:.3f}")
-            print(f"Context items: {result['context_items']}")
+            print(f"Response time: {result['metadata'].get('response_time', 0.0):.2f}s")
             print(f"Reasoning: {result['reasoning']}")
             print(f"{'='*70}")
-            print(f"\nAnswer: {result['answer']}\n")
-            
-            # Store in user history
-            db.store_user_interaction(
-                question=user_input,
-                answer=result['answer'],
-                question_embedding=embedding_gen.generate_embedding(user_input),
-                model_used=result['tier_name'],
-                similarity_score=result['similarity']
-            )
+            print(f"\n{result['answer']}\n")
             
         except KeyboardInterrupt:
             print("\n")
@@ -300,7 +278,22 @@ def main():
         except Exception as e:
             print(f"Error: {str(e)}\n")
     
+    # Final statistics
     print("="*70)
+    print("SESSION SUMMARY")
+    print("="*70)
+    
+    tier_stats = evaluator.get_tier_statistics()
+    if tier_stats['total_queries'] > 0:
+        print(f"Total queries: {tier_stats['total_queries']}")
+        print(f"Tier 1 (cache): {tier_stats['tier_1_cache']}")
+        print(f"Tier 2 (small): {tier_stats['tier_2_small']}")
+        print(f"Tier 3 (large): {tier_stats['tier_3_large']}")
+        print(f"Cache hit rate: {tier_stats['cache_hit_rate']:.1f}%")
+    else:
+        print("No queries processed")
+    
+    print("\n" + "="*70)
     print("Session ended")
     print("="*70)
 

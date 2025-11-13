@@ -31,8 +31,8 @@ MIN_CHUNK_SIZE = 100
 DB_PATH = "./data/vector_db"
 
 # ===== SIMILARITY THRESHOLDS =====
-HIGH_SIMILARITY_THRESHOLD = 0.90   # Use cache (Tier 1)
-MEDIUM_SIMILARITY_THRESHOLD = 0.70 # Use small model (Tier 2)
+HIGH_SIMILARITY_THRESHOLD = 0.95   # Use cache (Tier 1)
+MEDIUM_SIMILARITY_THRESHOLD = 0.85 # Use small model (Tier 2)
 # Below 0.70 uses large model (Tier 3)
 
 # ===== DATABASE SETTINGS =====
