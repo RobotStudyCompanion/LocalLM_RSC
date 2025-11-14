@@ -99,7 +99,7 @@ def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGener
         )
     except Exception as e:
         if "expecting embedding with dimension" in str(e):
-            print(f"  ⚠ Dimension mismatch - clearing documents collection...")
+            print(f"  [!] Dimension mismatch - clearing documents collection...")
             db.clear_collection("documents")
             print(f"  Retrying...")
             
@@ -136,7 +136,7 @@ def generate_questions_for_cache(
     
     # Check if model is available
     if not question_gen.verify_model():
-        print(f"✗ Model not available: {LARGE_MODEL}")
+        print(f"[X] Model not available: {LARGE_MODEL}")
         print(f"  Install with: ollama pull {LARGE_MODEL}")
         return False
     
@@ -147,7 +147,7 @@ def generate_questions_for_cache(
     # Check if there are documents
     doc_count = db.get_collection_stats().get('documents', {}).get('count', 0)
     if doc_count == 0:
-        print("\n⚠ No documents in database - skipping question generation")
+        print("\n[!] No documents in database - skipping question generation")
         return False
     
     print(f"\nFound {doc_count} document chunks")
@@ -155,7 +155,7 @@ def generate_questions_for_cache(
     # Check if cache already has questions
     cache_count = db.get_collection_stats().get('questions_cache', {}).get('count', 0)
     if cache_count > 0:
-        print(f"\n⚠ Cache already has {cache_count} questions")
+        print(f"\n[!] Cache already has {cache_count} questions")
         user_input = input("Generate more questions? (y/n): ").strip().lower()
         if user_input != 'y':
             print("Skipping question generation")
@@ -177,7 +177,7 @@ def generate_questions_for_cache(
         print(f"{'='*70}\n")
         return True
     else:
-        print(f"\n✗ Question generation failed: {result.get('error', 'Unknown error')}\n")
+        print(f"\n[X] Question generation failed: {result.get('error', 'Unknown error')}\n")
         return False
 
 
@@ -194,56 +194,56 @@ def main():
     embedding_gen = EmbeddingGenerator(model_name=EMBEDDING_MODEL, batch_size=EMBEDDING_BATCH_SIZE)
     test_emb = embedding_gen.generate_embedding("test")
     if not test_emb:
-        print("✗ Failed to generate test embedding")
+        print("[X] Failed to generate test embedding")
         print("  Make sure Ollama is running: ollama serve")
         print(f"  Make sure model is installed: ollama pull {EMBEDDING_MODEL}")
         return
-    print(f"✓ Embedding model: {EMBEDDING_MODEL} ({len(test_emb)}D)")
+    print(f"[OK] Embedding model: {EMBEDDING_MODEL} ({len(test_emb)}D)")
     
     # Database
     db = VectorDatabase(db_path=VECTOR_DB_PATH)
     if not db.initialize_db():
-        print("✗ Failed to initialize database")
+        print("[X] Failed to initialize database")
         return
-    print("✓ Database initialized")
+    print("[OK] Database initialized")
     
     # Evaluator
     evaluator = AccuracyEvaluator(db, embedding_gen)
-    print(f"✓ Accuracy evaluator initialized")
+    print(f"[OK] Accuracy evaluator initialized")
     
     # LLM Handler
     llm_handler = LLMHandler(db, embedding_gen, evaluator)
-    print("✓ LLM handler initialized")
+    print("[OK] LLM handler initialized")
     
     # Question Generator
     question_gen = QuestionGenerator(db, embedding_gen)
-    print("✓ Question generator initialized")
+    print("[OK] Question generator initialized")
     
     # Verify models
     print("\nVerifying LLM models...")
     model_status = llm_handler.verify_models()
     
     if not model_status.get("all_available", False):
-        print("⚠ Some models are not available:")
+        print("[!] Some models are not available:")
         if not model_status["small_model"]["available"]:
-            print(f"  ✗ Small model: {SMALL_MODEL}")
+            print(f"  [X] Small model: {SMALL_MODEL}")
             print(f"    Install with: ollama pull {SMALL_MODEL}")
         else:
-            print(f"  ✓ Small model: {SMALL_MODEL}")
-        
+            print(f"  [OK] Small model: {SMALL_MODEL}")
+
         if not model_status["large_model"]["available"]:
-            print(f"  ✗ Large model: {LARGE_MODEL}")
+            print(f"  [X] Large model: {LARGE_MODEL}")
             print(f"    Install with: ollama pull {LARGE_MODEL}")
         else:
-            print(f"  ✓ Large model: {LARGE_MODEL}")
+            print(f"  [OK] Large model: {LARGE_MODEL}")
         
         print("\nYou can continue, but some features may not work.")
         user_choice = input("Continue anyway? (y/n): ").strip().lower()
         if user_choice != 'y':
             return
     else:
-        print(f"✓ Small model: {SMALL_MODEL}")
-        print(f"✓ Large model: {LARGE_MODEL}")
+        print(f"[OK] Small model: {SMALL_MODEL}")
+        print(f"[OK] Large model: {LARGE_MODEL}")
     
     print(f"\nTier thresholds:")
     print(f"  Tier 1 (cache): >= {HIGH_SIMILARITY_THRESHOLD}")
@@ -255,10 +255,10 @@ def main():
     pdf_files = list(Path(DOCUMENTS_DIR).glob("*.pdf"))
     
     if not pdf_files:
-        print("⚠ No PDF files found")
+        print("[!] No PDF files found")
         print(f"  Add PDFs to: {DOCUMENTS_DIR}")
     else:
-        print(f"✓ Found {len(pdf_files)} PDF(s)\n")
+        print(f"[OK] Found {len(pdf_files)} PDF(s)\n")
         
         print("="*70)
         print("PROCESSING PDFs")
@@ -268,10 +268,10 @@ def main():
         for pdf_file in pdf_files:
             print(f"Processing: {pdf_file.name}")
             if process_pdf(str(pdf_file), db, embedding_gen):
-                print(f"✓ Success\n")
+                print(f"[OK] Success\n")
                 processed += 1
             else:
-                print(f"✗ Failed\n")
+                print(f"[X] Failed\n")
         
         print(f"Processed {processed}/{len(pdf_files)} PDFs\n")
 

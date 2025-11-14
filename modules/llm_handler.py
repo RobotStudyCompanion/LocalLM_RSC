@@ -12,6 +12,7 @@ from modules.database import VectorDatabase
 from modules.embeddings import EmbeddingGenerator
 from modules.accuracy_evaluator import AccuracyEvaluator
 from config import *
+from modules.prompts import get_llm_prompt_with_context_tier_2, get_llm_prompt_with_context_tier_3, get_llm_prompt_without_context
 
 
 class LLMHandler:
@@ -140,12 +141,12 @@ class LLMHandler:
             Tuple of (answer, metadata)
         """
         import time
-        
+        tier = 2
         # Get context
         context = self.evaluator.get_context_for_tier(evaluation, max_context_items=MAX_CONTEXT_ITEMS)
         
         # Build prompt
-        prompt = self._build_prompt(query, context)
+        prompt = self._build_prompt(query, context, tier)
         
         # Call small model
         start_time = time.time()
@@ -180,12 +181,12 @@ class LLMHandler:
             Tuple of (answer, metadata)
         """
         import time
-        
+        tier = 3
         # Get context
         context = self.evaluator.get_context_for_tier(evaluation, max_context_items=MAX_CONTEXT_ITEMS)
         
         # Build prompt
-        prompt = self._build_prompt(query, context)
+        prompt = self._build_prompt(query, context, tier)
         
         # Call large model
         start_time = time.time()
@@ -208,31 +209,26 @@ class LLMHandler:
         except Exception as e:
             return f"Error with large model: {str(e)}", {"response_time": 0.0, "error": str(e)}
     
-    def _build_prompt(self, query: str, context: List[str]) -> str:
+    def _build_prompt(self, query: str, context: List[str], tier) -> str:
         """
         Build a prompt with query and context
-        
+
         Args:
             query: User query
             context: List of context strings
-            
+
         Returns:
             Formatted prompt string
         """
         if not context:
-            return f"Question: {query}\n\nAnswer:"
-        
+            return get_llm_prompt_without_context(query)
+
         context_text = "\n\n".join([f"Context {i+1}:\n{ctx}" for i, ctx in enumerate(context)])
-        
-        prompt = f"""You are a helpful assistant. Answer the question based on the provided context.
 
-{context_text}
-
-Question: {query}
-
-Answer:"""
-        
-        return prompt
+        if tier == 2:
+            return get_llm_prompt_with_context_tier_2(query, context_text)
+        else:
+            return get_llm_prompt_with_context_tier_3(query, context_text)
     
     def verify_models(self) -> Dict:
         """

@@ -113,7 +113,7 @@ class VectorDatabase:
                 )
             )
             
-            print(f"✅ ChromaDB client initialized at: {self.db_path}")
+            print(f"[OK] ChromaDB client initialized at: {self.db_path}")
             
             # Create all collections
             self.create_collections()
@@ -121,7 +121,7 @@ class VectorDatabase:
             return True
             
         except Exception as e:
-            print(f"❌ Error initializing database: {str(e)}")
+            print(f"[ERROR] Error initializing database: {str(e)}")
             return False
     
     def create_collections(self) -> None:
@@ -156,12 +156,12 @@ class VectorDatabase:
                 }
             )
             
-            print(f"✅ Created {len(self.collections)} collections:")
+            print(f"[OK] Created {len(self.collections)} collections:")
             for name in self.collections.keys():
-                print(f"   📁 {name}")
+                print(f"   - {name}")
                 
         except Exception as e:
-            print(f"❌ Error creating collections: {str(e)}")
+            print(f"[ERROR] Error creating collections: {str(e)}")
             raise
     
     ###############################################################################################
@@ -205,11 +205,11 @@ class VectorDatabase:
                 ids=ids
             )
             
-            print(f"✅ Stored {len(chunks)} document chunks")
+            print(f"[OK] Stored {len(chunks)} document chunks")
             return True
             
         except Exception as e:
-            print(f"❌ Error storing document chunks: {str(e)}")
+            print(f"[ERROR] Error storing document chunks: {str(e)}")
             return False
     
     def get_document_chunks(self,query_embedding: Optional[List[float]] = None,n_results: int = 5,where: Optional[Dict] = None,where_document: Optional[Dict] = None) -> Dict:
@@ -238,16 +238,31 @@ class VectorDatabase:
                 )
             else:
                 # Just retrieve with filters (no similarity)
-                results = collection.get(
+                # Note: ChromaDB's get() may not support limit in all versions
+                # We'll get all and slice if needed
+                all_results = collection.get(
                     where=where,
-                    where_document=where_document,
-                    limit=n_results
+                    where_document=where_document
                 )
-            
+
+                # Slice results to match n_results if we got more
+                if all_results and 'documents' in all_results:
+                    if len(all_results['documents']) > n_results:
+                        results = {
+                            'ids': all_results['ids'][:n_results],
+                            'documents': all_results['documents'][:n_results],
+                            'metadatas': all_results.get('metadatas', [])[:n_results],
+                            'embeddings': all_results.get('embeddings', [])[:n_results] if 'embeddings' in all_results else None
+                        }
+                    else:
+                        results = all_results
+                else:
+                    results = all_results
+
             return results
             
         except Exception as e:
-            print(f"❌ Error retrieving document chunks: {str(e)}")
+            print(f"[ERROR] Error retrieving document chunks: {str(e)}")
             return {}
     
     def delete_document_by_name(self, document_name: str) -> bool:
@@ -270,14 +285,14 @@ class VectorDatabase:
             
             if results and results['ids']:
                 collection.delete(ids=results['ids'])
-                print(f"✅ Deleted {len(results['ids'])} chunks from {document_name}")
+                print(f"[OK] Deleted {len(results['ids'])} chunks from {document_name}")
                 return True
             else:
-                print(f"⚠️  No chunks found for document: {document_name}")
+                print(f"[!] No chunks found for document: {document_name}")
                 return False
                 
         except Exception as e:
-            print(f"❌ Error deleting document: {str(e)}")
+            print(f"[ERROR] Error deleting document: {str(e)}")
             return False
     
     ###############################################################################################
@@ -326,11 +341,11 @@ class VectorDatabase:
                 ids=[question_id]
             )
             
-            print(f"✅ Cached question-answer pair (ID: {question_id})")
+            print(f"[OK] Cached question-answer pair (ID: {question_id})")
             return True
             
         except Exception as e:
-            print(f"❌ Error storing question-answer: {str(e)}")
+            print(f"[ERROR] Error storing question-answer: {str(e)}")
             return False
     
     def find_similar_questions(self,question_embedding: List[float],n_results: int = 3,min_accuracy: float = 0.0) -> Dict:
@@ -358,7 +373,7 @@ class VectorDatabase:
             return results
             
         except Exception as e:
-            print(f"❌ Error finding similar questions: {str(e)}")
+            print(f"[ERROR] Error finding similar questions: {str(e)}")
             return {}
     
     def update_question_usage(self, question_id: str) -> bool:
@@ -388,14 +403,14 @@ class VectorDatabase:
                     metadatas=[current_meta]
                 )
                 
-                print(f"✅ Updated usage count for question {question_id}")
+                print(f"[OK] Updated usage count for question {question_id}")
                 return True
             else:
-                print(f"⚠️  Question not found: {question_id}")
+                print(f"[!] Question not found: {question_id}")
                 return False
                 
         except Exception as e:
-            print(f"❌ Error updating question usage: {str(e)}")
+            print(f"[ERROR] Error updating question usage: {str(e)}")
             return False
     
     def get_most_used_questions(self, n_results: int = 10) -> Dict:
@@ -438,7 +453,7 @@ class VectorDatabase:
             return {'questions': sorted_questions}
             
         except Exception as e:
-            print(f"❌ Error getting most used questions: {str(e)}")
+            print(f"[ERROR] Error getting most used questions: {str(e)}")
             return {}
     
     ###############################################################################################
@@ -491,7 +506,7 @@ class VectorDatabase:
             return True
             
         except Exception as e:
-            print(f"❌ Error storing user interaction: {str(e)}")
+            print(f"[ERROR] Error storing user interaction: {str(e)}")
             return False
     
     
@@ -514,7 +529,7 @@ class VectorDatabase:
         """
         try:
             if collection_name not in self.collections:
-                print(f"⚠️  Collection not found: {collection_name}")
+                print(f"[!] Collection not found: {collection_name}")
                 return {}
             
             collection = self.collections[collection_name]
@@ -528,7 +543,7 @@ class VectorDatabase:
             return results
             
         except Exception as e:
-            print(f"❌ Error in semantic search: {str(e)}")
+            print(f"[ERROR] Error in semantic search: {str(e)}")
             return {}
     
     def hybrid_search(self,query_embedding: List[float],keywords: List[str],collection_name: str,n_results: int = 5) -> Dict:
@@ -546,7 +561,7 @@ class VectorDatabase:
         """
         try:
             if collection_name not in self.collections:
-                print(f"⚠️  Collection not found: {collection_name}")
+                print(f"[!] Collection not found: {collection_name}")
                 return {}
             
             collection = self.collections[collection_name]
@@ -583,7 +598,7 @@ class VectorDatabase:
             return semantic_results
             
         except Exception as e:
-            print(f"❌ Error in hybrid search: {str(e)}")
+            print(f"[ERROR] Error in hybrid search: {str(e)}")
             return {}
     
     ###############################################################################################
@@ -604,7 +619,7 @@ class VectorDatabase:
         """
         try:
             if collection_name not in self.collections:
-                print(f"⚠️  Collection not found: {collection_name}")
+                print(f"[!] Collection not found: {collection_name}")
                 return False
             
             # Delete the collection
@@ -616,14 +631,35 @@ class VectorDatabase:
                 metadata={"hnsw:space": "cosine"}
             )
             
-            print(f"✅ Cleared collection: {collection_name}")
+            print(f"[OK] Cleared collection: {collection_name}")
             return True
             
         except Exception as e:
-            print(f"❌ Error clearing collection: {str(e)}")
+            print(f"[ERROR] Error clearing collection: {str(e)}")
             return False
-    
 
+    def get_collection_stats(self) -> Dict:
+        """
+        Get statistics for all collections
+
+        Returns:
+            Dict with collection names as keys and their stats as values
+        """
+        stats = {}
+
+        try:
+            for name, collection in self.collections.items():
+                count = collection.count()
+                stats[name] = {
+                    'count': count,
+                    'name': name
+                }
+
+            return stats
+
+        except Exception as e:
+            print(f"[ERROR] Error getting collection stats: {str(e)}")
+            return {}
 
 
 ###############################################################################################
@@ -635,7 +671,7 @@ if __name__ == "__main__":
     db = VectorDatabase(db_path="./data/vector_db")
     
     if db.initialize_db():
-        print("\n✅ Database initialized successfully!")
+        print("\n[OK] Database initialized successfully!")
         
         # Example: Store document chunks
         sample_chunks = [
@@ -676,6 +712,6 @@ if __name__ == "__main__":
         
 
         
-        print("\n✅ Database operations completed!")
+        print("\n[OK] Database operations completed!")
     else:
-        print("\n❌ Failed to initialize database")
+        print("\n[ERROR] Failed to initialize database")

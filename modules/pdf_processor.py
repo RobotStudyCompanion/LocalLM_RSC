@@ -175,7 +175,7 @@ def create_chunks(text: str, chunk_size: int, overlap: int, min_size: int) -> Li
 ######### use this only to get info on waht is happening ##################################
 def print_pdf_summary(result: Dict) -> None:
     if not result["success"]:
-        print(f"❌ Error: {result['error']}")
+        print(f"[ERROR] Error: {result['error']}")
         return
     
     print("\n" + "="*60)
