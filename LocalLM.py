@@ -59,10 +59,7 @@ from modules.database import VectorDatabase
 from modules.embeddings import EmbeddingGenerator
 from modules.accuracy_evaluator import AccuracyEvaluator
 from modules.llm_handler import LLMHandler
-
-###############################################################################################
-# function that will handle the generation of questions from the document using the big model
-###############################################################################################
+from modules.question_generator import QuestionGenerator
 
 
 def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGenerator) -> bool:
@@ -117,6 +114,73 @@ def process_pdf(pdf_path: str, db: VectorDatabase, embedding_gen: EmbeddingGener
             return False
 
 
+def generate_questions_for_cache(
+    db: VectorDatabase,
+    embedding_gen: EmbeddingGenerator,
+    question_gen: QuestionGenerator
+) -> bool:
+    """
+    Generate questions from documents and populate cache
+    
+    Args:
+        db: VectorDatabase instance
+        embedding_gen: EmbeddingGenerator instance
+        question_gen: QuestionGenerator instance
+        
+    Returns:
+        bool: Success status
+    """
+    print("\n" + "="*70)
+    print("GENERATING QUESTIONS FOR CACHE")
+    print("="*70 + "\n")
+    
+    # Check if model is available
+    if not question_gen.verify_model():
+        print(f"✗ Model not available: {LARGE_MODEL}")
+        print(f"  Install with: ollama pull {LARGE_MODEL}")
+        return False
+    
+    print(f"Using model: {LARGE_MODEL}")
+    print(f"Max chunks: {MAX_CHUNKS_FOR_QUESTIONS if MAX_CHUNKS_FOR_QUESTIONS else 'all'}")
+    print(f"Questions per chunk: {QUESTIONS_PER_CHUNK}")
+    
+    # Check if there are documents
+    doc_count = db.get_collection_stats().get('documents', {}).get('count', 0)
+    if doc_count == 0:
+        print("\n⚠ No documents in database - skipping question generation")
+        return False
+    
+    print(f"\nFound {doc_count} document chunks")
+    
+    # Check if cache already has questions
+    cache_count = db.get_collection_stats().get('questions_cache', {}).get('count', 0)
+    if cache_count > 0:
+        print(f"\n⚠ Cache already has {cache_count} questions")
+        user_input = input("Generate more questions? (y/n): ").strip().lower()
+        if user_input != 'y':
+            print("Skipping question generation")
+            return False
+    
+    # Generate questions
+    result = question_gen.generate_and_cache_questions(
+        max_chunks=MAX_CHUNKS_FOR_QUESTIONS,
+        questions_per_chunk=QUESTIONS_PER_CHUNK
+    )
+    
+    if result['success']:
+        print(f"\n{'='*70}")
+        print("QUESTION GENERATION COMPLETE")
+        print(f"{'='*70}")
+        print(f"Chunks processed: {result['total_chunks']}")
+        print(f"Questions generated: {result['questions_generated']}")
+        print(f"Questions cached: {result['questions_cached']}")
+        print(f"{'='*70}\n")
+        return True
+    else:
+        print(f"\n✗ Question generation failed: {result.get('error', 'Unknown error')}\n")
+        return False
+
+
 def main():
     """Main execution flow"""
     print("\n" + "="*70)
@@ -151,6 +215,10 @@ def main():
     llm_handler = LLMHandler(db, embedding_gen, evaluator)
     print("✓ LLM handler initialized")
     
+    # Question Generator
+    question_gen = QuestionGenerator(db, embedding_gen)
+    print("✓ Question generator initialized")
+    
     # Verify models
     print("\nVerifying LLM models...")
     model_status = llm_handler.verify_models()
@@ -169,7 +237,7 @@ def main():
         else:
             print(f"  ✓ Large model: {LARGE_MODEL}")
         
-        print("\nYou can continue, but some tiers may not work properly.")
+        print("\nYou can continue, but some features may not work.")
         user_choice = input("Continue anyway? (y/n): ").strip().lower()
         if user_choice != 'y':
             return
@@ -206,8 +274,14 @@ def main():
                 print(f"✗ Failed\n")
         
         print(f"Processed {processed}/{len(pdf_files)} PDFs\n")
+
+    
+    # Generate questions if enabled
+    if AUTO_GENERATE_QUESTIONS:
+        generate_questions_for_cache(db, embedding_gen, question_gen)
     
 
+    
     # Interactive query loop
     print("="*70)
     print("INTERACTIVE QUERY MODE - Three-Tier System")
@@ -216,6 +290,7 @@ def main():
     print("  'quit' - Exit")
     print("  'stats' - Database statistics")
     print("  'tier-stats' - Tier usage statistics")
+    print("  'generate' - Generate more questions")
     print("  'help' - Show this help message")
     print()
     
@@ -231,6 +306,7 @@ def main():
                 print("  'quit' - Exit the program")
                 print("  'stats' - Show database statistics")
                 print("  'tier-stats' - Show tier usage statistics")
+                print("  'generate' - Generate more questions for cache")
                 print("  'help' - Show this help message")
                 print()
                 continue
@@ -254,6 +330,10 @@ def main():
                     print(f"  Cache hit rate: {tier_stats['cache_hit_rate']:.1f}%")
                     print(f"  Avg similarity: {tier_stats['avg_similarity']:.3f}")
                 print()
+                continue
+            
+            if user_input.lower() == 'generate':
+                generate_questions_for_cache(db, embedding_gen, question_gen)
                 continue
             
             if not user_input:

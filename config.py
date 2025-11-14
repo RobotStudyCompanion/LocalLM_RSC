@@ -51,6 +51,11 @@ VERBOSE = True
 # Context Settings
 MAX_CONTEXT_ITEMS = 3  # Number of context chunks for LLM
 
+# Question Generation Settings
+AUTO_GENERATE_QUESTIONS = True       # Generate questions on initialization
+MAX_CHUNKS_FOR_QUESTIONS = 20        # Max chunks to process (None = all)
+QUESTIONS_PER_CHUNK = 2  
+
 print(f"📁 Project root: {PROJECT_ROOT}")
 print(f"📄 Documents directory: {DOCUMENTS_DIR}")
 print(f"💾 Vector DB path: {VECTOR_DB_PATH}")
