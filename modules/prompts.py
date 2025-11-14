@@ -51,8 +51,9 @@ You should use a simple and easy to understand language, suitable for a student 
 You should try to make the answer engaging and interesting.
 You should use language and way of explaining as your were talking by oral to a student.
 
-Answer the question based on the provided contextn this context is from both the document database.
+Answer the question based on the provided contextn this context is from the document database, if the question is not related to the context, you can still answer the question as long as it is not offensive or dangerous.
 Your goal is to use the information in the context to provide an accurate and concise answer, you should prioritize information from the context if possible.
+You can answer questions that are not related to the context as well.
 
 here is the context:
 {context_text}
@@ -109,20 +110,30 @@ def get_question_generation_prompt(chunk: str, num_questions: int = 3) -> str:
     Returns:
         Formatted prompt string
     """
-    return f"""Based on the following text, generate {num_questions} diverse questions that can be answered using the information in the text. For each question, provide a clear and concise answer.
+    return f"""you are a student trying to learn the material provided in the text below, by generating possible questions and answers that could be asked about the material.
+Those questions should be created like they were asked orally by another student that didn't understand the material well enough.
+
+Based on the following text, generate {num_questions} diverse questions that can be answered using the information in the text. For each question, provide a clear and concise answer.
+
+CRITICAL REQUIREMENTS FOR QUESTIONS:
+- Each question MUST be 10 words or less (STRICT LIMIT - count the words!)
+- Questions should be 3-10 words long
+- Questions should sound natural and conversational
+- Questions should cover different aspects of the text
+- DO NOT exceed 10 words per question under any circumstances
 
 Text:
 {chunk}
 
-Format your response as:
-Q1: [question]
+Format your response EXACTLY as:
+Q1: [question - maximum 10 words]
 A1: [answer]
 
-Q2: [question]
+Q2: [question - maximum 10 words]
 A2: [answer]
 
-Q3: [question]
+Q3: [question - maximum 10 words]
 A3: [answer]
 
-Generate the questions and answers now:"""
+Generate the questions and answers now. Remember: each question MUST be 10 words or less!"""
 

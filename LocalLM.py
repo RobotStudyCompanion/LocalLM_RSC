@@ -358,25 +358,6 @@ def main():
         except Exception as e:
             print(f"Error: {str(e)}\n")
     
-    # Final statistics
-    print("="*70)
-    print("SESSION SUMMARY")
-    print("="*70)
-    
-    tier_stats = evaluator.get_tier_statistics()
-    if tier_stats['total_queries'] > 0:
-        print(f"Total queries: {tier_stats['total_queries']}")
-        print(f"Tier 1 (cache): {tier_stats['tier_1_cache']}")
-        print(f"Tier 2 (small): {tier_stats['tier_2_small']}")
-        print(f"Tier 3 (large): {tier_stats['tier_3_large']}")
-        print(f"Cache hit rate: {tier_stats['cache_hit_rate']:.1f}%")
-    else:
-        print("No queries processed")
-    
-    print("\n" + "="*70)
-    print("Session ended")
-    print("="*70)
-
 
 if __name__ == "__main__":
     main()
