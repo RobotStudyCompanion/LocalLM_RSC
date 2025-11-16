@@ -12,7 +12,7 @@ from modules.database import VectorDatabase
 from modules.embeddings import EmbeddingGenerator
 from modules.accuracy_evaluator import AccuracyEvaluator
 from config import *
-from modules.prompts import get_llm_prompt_with_context_tier_2, get_llm_prompt_with_context_tier_3, get_llm_prompt_without_context
+from modules.prompts import get_llm_prompt_with_context_tier_2, get_llm_prompt_with_context_tier_3, get_llm_prompt_without_context, get_llm_prompt_general_question
 
 
 class LLMHandler:
@@ -172,22 +172,30 @@ class LLMHandler:
     def _handle_tier3_large(self, query: str, evaluation: Dict) -> tuple:
         """
         Handle tier 3: Use large model with context
-        
+
         Args:
             query: User query
             evaluation: Evaluation result
-            
+
         Returns:
             Tuple of (answer, metadata)
         """
         import time
         tier = 3
-        # Get context
-        context = self.evaluator.get_context_for_tier(evaluation, max_context_items=MAX_CONTEXT_ITEMS)
-        
-        # Build prompt
-        prompt = self._build_prompt(query, context, tier)
-        
+        max_similarity = evaluation.get("max_similarity", 0.0)
+
+        # Check if context is relevant enough to use
+        # If similarity is too low, the context is probably not related to the question
+        if max_similarity < MIN_CONTEXT_RELEVANCE:
+            # Context is irrelevant, answer question directly without confusing context
+            prompt = get_llm_prompt_general_question(query)
+            context = []
+            print(f"[INFO] Low similarity ({max_similarity:.3f} < {MIN_CONTEXT_RELEVANCE}), ignoring irrelevant context")
+        else:
+            # Get context only if it's relevant
+            context = self.evaluator.get_context_for_tier(evaluation, max_context_items=MAX_CONTEXT_ITEMS)
+            prompt = self._build_prompt(query, context, tier)
+
         # Call large model
         start_time = time.time()
         try:
@@ -197,15 +205,16 @@ class LLMHandler:
             )
             answer = response['response'].strip()
             response_time = time.time() - start_time
-            
+
             metadata = {
                 "response_time": response_time,
                 "context_items": len(context),
-                "model": self.large_model
+                "model": self.large_model,
+                "context_used": max_similarity >= MIN_CONTEXT_RELEVANCE
             }
-            
+
             return answer, metadata
-            
+
         except Exception as e:
             return f"Error with large model: {str(e)}", {"response_time": 0.0, "error": str(e)}
     

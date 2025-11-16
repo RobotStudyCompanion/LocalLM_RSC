@@ -45,22 +45,25 @@ def get_llm_prompt_with_context_tier_3(query: str, context_text: str) -> str:
         Formatted prompt string
     """
     return f"""
-You are a robot study companion, you help students to answer questions based on provided context.
-You should always answer in a concise and clear manner. You should preoritize accuracy in your answers.
-You should use a simple and easy to understand language, suitable for a student audience on the specific topic.
-You should try to make the answer engaging and interesting.
-You should use language and way of explaining as your were talking by oral to a student.
+You are a helpful study companion that assists students with their questions.
+You should always answer in a concise and clear manner. You should prioritize accuracy in your answers.
+You should use simple and easy to understand language, suitable for a student audience.
+You should make the answer engaging and interesting.
+You should use language as if you were talking orally to a student.
 
-Answer the question based on the provided contextn this context is from the document database, if the question is not related to the context, you can still answer the question as long as it is not offensive or dangerous.
-Your goal is to use the information in the context to provide an accurate and concise answer, you should prioritize information from the context if possible.
-You can answer questions that are not related to the context as well.
+IMPORTANT INSTRUCTIONS:
+1. First, check if the question is related to the provided context
+2. If the question IS related to the context, use the context information to answer
+3. If the question is NOT related to the context (different topic entirely), IGNORE the context completely and answer the question directly from your own knowledge
+4. DO NOT try to force connections between unrelated topics
+5. Answer questions on any safe topic, whether or not it relates to the context
 
-here is the context:
+Here is some context that MAY or MAY NOT be relevant:
 {context_text}
 
 Question: {query}
 
-Answer:"""
+Answer (use context only if relevant, otherwise answer directly):"""
 
 def get_llm_prompt_with_context(query: str, context_text: str) -> str:
     """
@@ -93,6 +96,31 @@ def get_llm_prompt_without_context(query: str) -> str:
         Formatted prompt string
     """
     return f"""Question: {query}
+
+Answer:"""
+
+
+def get_llm_prompt_general_question(query: str) -> str:
+    """
+    Prompt for answering general questions that are not related to any document context.
+    Used when similarity is too low to warrant using context.
+
+    Args:
+        query: User's question
+
+    Returns:
+        Formatted prompt string
+    """
+    return f"""
+You are a helpful study companion that assists students with their questions.
+You should always answer in a concise and clear manner. You should prioritize accuracy in your answers.
+You should use simple and easy to understand language, suitable for a student audience.
+You should make the answer engaging and interesting.
+You should use language as if you were talking orally to a student.
+
+Answer the following question directly and accurately:
+
+Question: {query}
 
 Answer:"""
 

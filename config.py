@@ -35,6 +35,13 @@ HIGH_SIMILARITY_THRESHOLD = 0.90   # Use cache (Tier 1)
 MEDIUM_SIMILARITY_THRESHOLD = 0.70 # Use small model (Tier 2)
 # Below 0.70 uses large model (Tier 3)
 
+# ===== CROSS-ENCODER SETTINGS =====
+USE_CROSS_ENCODER = True  # Enable cross-encoder re-ranking for better semantic matching
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # Lightweight model for Pi
+CROSS_ENCODER_TOP_K = 5  # Number of candidates to re-rank (keep low for performance)
+EMBEDDING_WEIGHT = 0.3   # Weight for embedding similarity (0-1)
+CROSS_ENCODER_WEIGHT = 0.7  # Weight for cross-encoder score (0-1)
+
 # ===== DATABASE SETTINGS =====
 COLLECTION_DOCUMENTS = "documents"
 COLLECTION_QUESTIONS = "questions_cache"
@@ -50,6 +57,7 @@ VERBOSE = True
 
 # Context Settings
 MAX_CONTEXT_ITEMS = 3  # Number of context chunks for LLM
+MIN_CONTEXT_RELEVANCE = 0.5  # Minimum similarity to consider context relevant (below this, ignore context)
 
 # Question Generation Settings
 AUTO_GENERATE_QUESTIONS = True       # Generate questions on initialization
